@@ -6,9 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,19 +14,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK 35
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          ANDROID_SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$ANDROID_SDK/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found"
+            exit 1
+          fi
+
+          echo "Using: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -37,21 +41,23 @@ jobs:
           gradle-version: "8.9"
 
       - name: Extract project
+        shell: bash
         run: |
-          mkdir extracted
+          mkdir -p extracted
           cp PoolAimUpload.bin extracted/PoolAim.zip
-          cd extracted
-          unzip -q PoolAim.zip
-          echo "PROJECT_DIR=$PWD/PoolAimOverlay" >> "$GITHUB_ENV"
+          unzip -q extracted/PoolAim.zip -d extracted
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/extracted/PoolAimOverlay" >> "$GITHUB_ENV"
 
       - name: Build APK
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
           gradle --no-daemon :app:assembleDebug
 
       - name: Prepare APK
+        shell: bash
         run: |
-          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" PoolAimOverlay-v1.apk
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" "$GITHUB_WORKSPACE/PoolAimOverlay-v1.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
